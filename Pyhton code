@@ -1,0 +1,183 @@
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import warnings
+warnings.filterwarnings('ignore')
+
+# first thing is first we need to retrieve the data
+taxi_data = pd.read_csv("C:/Users/Shubkaran/OneDrive/Attachments/Desktop/yellow_tripdata_2020-01.csv")
+
+# we have to understand how data looks like, how many rows and columns are there and what  it's data-type?
+# print(taxi_data.shape)
+# print(taxi_data.dtypes)
+# this has given us 6405008 as rows and 18 as columns
+# we need to calculate duration for which we will use pickup time and drop-off time
+# so need to change their data-type into date-time first
+
+taxi_data['tpep_pickup_datetime'] = pd.to_datetime(taxi_data['tpep_pickup_datetime'])
+taxi_data['tpep_dropoff_datetime'] = pd.to_datetime(taxi_data['tpep_dropoff_datetime'])
+# print(taxi_data.dtypes)
+
+# to calculate duration we will subtract pickup time from drop-off time
+taxi_data['duration'] = taxi_data['tpep_dropoff_datetime'] - taxi_data['tpep_pickup_datetime']
+# print(taxi_data.dtypes)
+taxi_data['duration'] = taxi_data['duration'].dt.total_seconds()/60
+# taxi_data['duration'] = pd.to_timedelta(taxi_data['duration'])
+# taxi_data['duration'] = taxi_data['duration'].apply(lambda x: f"{int(x.total_seconds()//60)}:{int(x.total_seconds()% 60):02}")
+#now we have to filter the data
+#there are two options to filter the data either to use drop or to extract data which is only needed
+# here we will extract the data using indexation function
+
+df = taxi_data[['passenger_count','payment_type','fare_amount','trip_distance','duration']]
+# print(df)
+
+# from the selected data we need to check if it has any null values
+# print(df.isnull().sum())
+
+# after finding the null values we will check how much it contributes to actual data
+# tip :- drop if null value's share is not that sufficent else try to fill it
+# here it is only 1 % (65441/6405008*100), so we prefer to delete these null values.
+
+df.dropna(inplace = True)
+# print(df)
+
+# observe that the data passaenger count and payment type are in flaot which can't be possible
+# so we will chnage them into integers
+
+df['passenger_count'] = df['passenger_count'].astype('int64')
+df['payment_type'] = df['payment_type'].astype('int64')
+
+# print(df.dtypes)
+
+#since duplicate values are of no use to us so we simply drop them
+df.drop_duplicates(inplace = True)
+# print(df.shape)
+
+# after cleaning the data, the next step is to know the distribution of the data for both categorial and numerical Variables
+
+# print(df['passenger_count'].value_counts(normalize=True))
+# print(df['payment_type'].value_counts(normalize=True))
+
+# now we will filter out the data
+df = df[df['payment_type']<3]
+df = df[(df['passenger_count']>0)&(df['passenger_count']<6)]
+# print(df.shape)
+
+#for better reresentation we need to change the values
+#under payment type 1 means 'card' and 2 means 'cash'
+
+df['payment_type'].replace([1,2],['Card','Cash'],inplace = True)
+# print(df)
+
+# to know more about numeric data we use .describe
+# print(df.describe())
+
+# we have found some negative values, we have to remove it
+df = df[df['fare_amount']>0]
+df = df[df['trip_distance']>0]
+df = df[df['duration']>0]
+
+# to check the outliers we use boxplot
+# plt.boxplot(df['fare_amount'])
+# plt.show()
+
+#to remove the outliers present in our dataset we have two optins z-test or IQR
+# since the data is not normally distributed we are not going to use Z-test but rather IQR
+for col in ['fare_amount','trip_distance','duration']:
+ q1 = df[col].quantile(0.25)
+ q3 = df[col].quantile(0.75)
+ IQR = q3 -q1
+
+ lower_bound = q1-1.5*IQR
+ upper_bound = q3+1.5*IQR
+ df = df[(df[col]>=lower_bound) & (df[col]<=upper_bound)]
+
+# to know what customers prefer card or cash we will be ploting their distribution
+# to draw multiple plots in one figure we will use subplot
+
+# plt.figure(figsize=(12,5))
+# plt.subplot(1,2,1)
+# plt.title('Distribution of fare amount')
+# plt.hist(df[df['payment_type']=='Card']['fare_amount'],histtype='barstacked', bins=20, edgecolor = 'k', color = '#1C2951', label ='Card')
+# plt.hist(df[df['payment_type']=='Cash']['fare_amount'],histtype='barstacked', bins= 20, edgecolor = 'k', color = '#5097A4', label = 'Cash')
+# plt.legend()
+#
+# plt.subplot(1,2,2)
+# plt.title('Distribution of trip distance')
+# plt.hist(df[df['payment_type']=='Card']['trip_distance'], histtype='barstacked', bins = 20, edgecolor = 'k', color = '#1C2951', label ='Card')
+# plt.hist(df[df['payment_type']=='Cash']['trip_distance'], histtype='barstacked',bins =20, edgecolor = 'k', color = '#5097A4', label ='Cash')
+# plt.legend()
+# plt.show()
+
+# caculating the mean and standard deviation for same
+# sn = df.groupby('payment_type').agg({'fare_amount':['mean','std'],'trip_distance':['mean','std']})
+# print(sn)
+
+# now let's study how much percenatge of customers prefer cash and how much prfer card
+# TIP!! whenever you have to find the percentage or share always use pie chart or dounut chart
+
+# plt.title('Preference of Payment Type')
+# plt.pie(df['payment_type'].value_counts(normalize=True), labels = df['payment_type'].value_counts().index,
+#         startangle= 90, shadow=True, autopct='%1.1f%%',colors = ['#1C2951','#5097A4'])
+# plt.show()
+
+# further we will see the share of passenger count in payment type
+# for this we will be using stacked bar chart
+
+passenger_count = df.groupby(['payment_type','passenger_count'])[['passenger_count']].count()
+
+#REMEMBER when we are using groupby function on more than one variable we will pass it as list
+
+passenger_count.rename(columns = {'passenger_count':'count'}, inplace = True)
+passenger_count.reset_index(inplace=True)
+passenger_count['perc'] = (passenger_count['count']/passenger_count['count'].sum())*100
+
+# to make a stacked bar we need to create a temporary dataframe
+tdf = pd.DataFrame(columns = ['payment_type',1,2,3,4,5])
+tdf['payment_type'] = ['Card','Cash']
+tdf.iloc[0,1:]=passenger_count.iloc[0:5,-1]
+tdf.iloc[1,1:]=passenger_count.iloc[5:,-1]
+# print(tdf)
+
+
+# Plot the bar graph and capture the Axes object in ax
+# ax = tdf.plot(x='payment_type', kind='barh', stacked=True, color=['#131E3A', '#1134A6', '#0080FE', '#008ECC', '#5097A4'], figsize=(12, 6))
+
+# Add labels to each barli
+# for p in ax.patches:
+#     width = p.get_width()   # Get the width of each bar
+#     height = p.get_height() # Get the height of each bar
+#     x, y = p.get_xy()       # Get the x and y position of each bar
+#     ax.text(x + width / 2,  # Position text horizontally centered on each bar
+#             y + height / 2, # Position text vertically centered on each bar
+#             '{:.0f}%'.format(width),  # Format the text as a percentage without decimals
+#             ha='center',    # Center the text horizontally
+#             va='center')    # Center the text vertically
+#
+# plt.show()
+
+# Null hypothesis :- There is no difference in avg fare btw customers who use cards and customers who use cash
+# Alternative hypothesis :- There is a diff in avg fare amount btw customers who use cards and customers who use cash
+
+# after definig the null hypothesis and alternative hypothesis, we have to perform the test
+# type of tests are :- ANOVA , CHI SQUARE, Z-TEST, T-TEST
+# here we have to chose btw Z-test and T-test
+# there are some conditions to perform z-test like we must the standard deviation of the population (which is not given) and also the data must be normally distributed
+# to know if the data is normally distributed we will use qq plot (quartile quartile)
+
+# sm.qqplot(df['fare_amount'], line = '45')
+# plt.show()
+# after ploting qq plot we found that data doesn't lie on the line, which depicts data is not normally distributed so we are going to use T-test
+# tip if population's standard deviation is not given use t-test
+
+# to perform t-test we need to make samples first
+card_sample = df[df['payment_type']=='Card']['fare_amount']
+cash_sample = df[df['payment_type']=='Cash']['fare_amount']
+from scipy.stats import ttest_ind
+t_stats, p_value = ttest_ind(a = card_sample, b = cash_sample, equal_var = False )
+print('T-stats', t_stats, 'P-value', p_value)
+
+# T-value = 169.211 and p-value = 0.0
+# high t value indicates a large difference btw means of two groups, suggesting that they are not likely same
+# p-value less than 0.05 means that there is strong evidence against the null-hypothesis
+# so we accept the alternative hypothesis
